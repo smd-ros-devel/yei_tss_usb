@@ -1,0 +1,18 @@
+<package>
+  <description brief="yei_tss_usb">
+
+     yei_tss_usb
+
+  </description>
+  <author>Scott K Logan</author>
+  <license>BSD</license>
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/yei_tss_usb</url>
+  <depend package="roscpp"/>
+  <depend package="sensor_msgs"/>
+  <depend package="std_srvs"/>
+  <depend package="diagnostic_updater"/>
+
+</package>
+
+
