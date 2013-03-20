@@ -39,15 +39,19 @@
 #define _tss_usb_driver_hpp
 
 #include <yei_tss_usb/tss_usb.h>
+#include <yei_tss_usb/LEDColor.h>
 
 #include <ros/ros.h>
 #include <ros/rate.h>
+#include <tf/tf.h>
 #include <std_srvs/Empty.h>
 #include <diagnostic_updater/diagnostic_updater.h>
 #include <diagnostic_updater/publisher.h>
 #include <diagnostic_updater/update_functions.h>
 
 #include <boost/thread.hpp>
+
+#define GRAVITATIONAL_ACCELERATION -9.80665
 
 namespace yei_tss_usb
 {
@@ -60,6 +64,7 @@ namespace yei_tss_usb
 		~TSSUSB( );
 		bool TSSOpen( );
 		void TSSClose( );
+		static enum tss_usb_axis_configurations str_to_tss_axis( const char *str );
 	private:
 		bool TSSOpenNoLock( );
 		void TSSCloseNoLock( );
@@ -82,6 +87,7 @@ namespace yei_tss_usb
 		bool ResetCB( std_srvs::Empty::Request &req, std_srvs::Empty::Response &res );
 		bool FactoryCB( std_srvs::Empty::Request &req, std_srvs::Empty::Response &res );
 		bool MultiRefCB( std_srvs::Empty::Request &req, std_srvs::Empty::Response &res );
+		bool LEDColorCB( yei_tss_usb::LEDColor::Request &req, yei_tss_usb::LEDColor::Response &res );
 
 		ros::NodeHandle nh;
 		ros::NodeHandle nh_priv;
@@ -112,10 +118,16 @@ namespace yei_tss_usb
 		ros::ServiceServer commit_srv;
 		ros::ServiceServer reset_srv;
 		ros::ServiceServer factory_srv;
-		ros::ServiceServer multi_ref_srv;
+		ros::ServiceServer led_color_srv;
 
 		unsigned int io_failure_count;
 		unsigned int open_failure_count;
+		enum tss_usb_axis_configurations axis_config;
+		bool invert_x_axis;
+		bool invert_y_axis;
+		bool invert_z_axis;
+		int reference_vector_mode;
+		tf::Vector3 grav_vect;
 
 		ros::Rate spin_rate;
 		boost::thread spin_thread;

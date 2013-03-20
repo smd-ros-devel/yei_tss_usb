@@ -4,6 +4,7 @@
 
 #include <sensor_msgs/Imu.h>
 #include <ros/time.h>
+#include <tf/tf.h>
 
 namespace yei_tss_usb
 {
@@ -20,6 +21,12 @@ namespace yei_tss_usb
 		diag_pub_freq( diagnostic_updater::FrequencyStatusParam( &min_update_rate, &max_update_rate, 0.1, 10 ) ),
 		io_failure_count( 0 ),
 		open_failure_count( 0 ),
+		axis_config( TSS_USB_AXIS_YZX ),
+		invert_x_axis( false ),
+		invert_y_axis( true ),
+		invert_z_axis( false ),
+		reference_vector_mode( 1 ),
+		grav_vect( 0, 0, GRAVITATIONAL_ACCELERATION ),
 		spin_rate( 100 ),
 		spin_thread( &TSSUSB::spin, this )
 	{
@@ -29,12 +36,53 @@ namespace yei_tss_usb
 		diag.add( diag_pub_freq );
 
 		nh_priv.param( "frame_id", frame_id, (std::string)"imu" );
+		std::string temp_axis_config;
+		nh_priv.param( "axis_config", temp_axis_config, (std::string)"yzx" );
+		axis_config = str_to_tss_axis( temp_axis_config.c_str( ) );
+		nh_priv.param( "invert_x_axis", invert_x_axis, false );
+		nh_priv.param( "invert_y_axis", invert_y_axis, true );
+		nh_priv.param( "invert_z_axis", invert_z_axis, false );
+		XmlRpc::XmlRpcValue temp_gravity_vector;
+		temp_gravity_vector[0] = 0.0;
+		temp_gravity_vector[1] = 0.0;
+		temp_gravity_vector[2] = GRAVITATIONAL_ACCELERATION;
+		nh_priv.param( "gravity_vector", temp_gravity_vector, temp_gravity_vector );
+		ROS_ASSERT( temp_gravity_vector.getType() == XmlRpc::XmlRpcValue::TypeArray );
+		ROS_ASSERT( temp_gravity_vector.size( ) == 3 );
+		ROS_ASSERT( temp_gravity_vector[0].getType() == XmlRpc::XmlRpcValue::TypeDouble );
+		ROS_ASSERT( temp_gravity_vector[1].getType() == XmlRpc::XmlRpcValue::TypeDouble );
+		ROS_ASSERT( temp_gravity_vector[2].getType() == XmlRpc::XmlRpcValue::TypeDouble );
+		grav_vect = tf::Vector3( temp_gravity_vector[0], temp_gravity_vector[1], temp_gravity_vector[2] );
+		nh_priv.param( "reference_vector_mode", reference_vector_mode, 1 );
+		ROS_ASSERT( reference_vector_mode >= 0 && reference_vector_mode <= 3 );
 	}
 
 	TSSUSB::~TSSUSB( )
 	{
 		spin_thread.interrupt( );
 		TSSClose( );
+	}
+
+	enum tss_usb_axis_configurations TSSUSB::str_to_tss_axis( const char *str )
+	{
+		if( std::strlen( str ) == 3 )
+		{
+			const char lowerstr[4] = { tolower( str[0] ), tolower( str[1] ), tolower( str[2] ), '\0' };
+			if( lowerstr[0] == 'x' && lowerstr[1] == 'y' && lowerstr[2] == 'z' )
+				return TSS_USB_AXIS_XYZ;
+			if( lowerstr[0] == 'x' && lowerstr[1] == 'z' && lowerstr[2] == 'y' )
+				return TSS_USB_AXIS_XZY;
+			if( lowerstr[0] == 'y' && lowerstr[1] == 'x' && lowerstr[2] == 'z' )
+				return TSS_USB_AXIS_YXZ;
+			if( lowerstr[0] == 'y' && lowerstr[1] == 'z' && lowerstr[2] == 'x' )
+				return TSS_USB_AXIS_YZX;
+			if( lowerstr[0] == 'z' && lowerstr[1] == 'x' && lowerstr[2] == 'y' )
+				return TSS_USB_AXIS_ZXY;
+			if( lowerstr[0] == 'z' && lowerstr[1] == 'y' && lowerstr[2] == 'x' )
+				return TSS_USB_AXIS_ZYX;
+		}
+		ROS_ASSERT_MSG(1, "WARNING: Invalid axis configuration '%s'", str );
+		return TSS_USB_AXIS_XYZ;
 	}
 
 	bool TSSUSB::TSSOpen( )
@@ -56,14 +104,15 @@ namespace yei_tss_usb
 			return false;
 		}
 
-		if( tss_set_axis_directions( tssd, TSS_USB_YZX | TSS_USB_INVERT_Y ) < 0 )
+		if( tss_set_axis_directions( tssd, axis_config | ( invert_x_axis ? TSS_USB_INVERT_X : 0 )
+			| ( invert_y_axis ? TSS_USB_INVERT_Y : 0 ) | ( invert_z_axis ? TSS_USB_INVERT_Z : 0 ) ) < 0 )
 		{
 			TSSCloseNoLock( );
 			io_failure_count++;
 			return false;
 		}
 
-		if( tss_set_reference_mode( tssd, TSS_USB_REFERENCE_MULTI ) < 0 )
+		if( tss_set_reference_mode( tssd, reference_vector_mode ) < 0 )
 		{
 			TSSCloseNoLock( );
 			io_failure_count++;
@@ -77,7 +126,7 @@ namespace yei_tss_usb
 		commit_srv = nh_priv.advertiseService( "commit", &TSSUSB::CommitCB, this );
 		reset_srv = nh_priv.advertiseService( "reset", &TSSUSB::ResetCB, this );
 		factory_srv = nh_priv.advertiseService( "restore_factory_settings", &TSSUSB::FactoryCB, this );
-		multi_ref_srv = nh_priv.advertiseService( "set_multi_reference_vectors", &TSSUSB::MultiRefCB, this );
+		led_color_srv = nh_priv.advertiseService( "set_led_color", &TSSUSB::LEDColorCB, this );
 
 		return true;
 	}
@@ -108,8 +157,8 @@ namespace yei_tss_usb
 			reset_srv.shutdown( );
 		if( factory_srv )
 			factory_srv.shutdown( );
-		if( multi_ref_srv )
-			multi_ref_srv.shutdown( );
+		if( led_color_srv )
+			led_color_srv.shutdown( );
 	}
 
 	void TSSUSB::spin( )
@@ -171,9 +220,52 @@ namespace yei_tss_usb
 		msg->angular_velocity.y = gyro[1];
 		msg->angular_velocity.z = gyro[2];
 
-		msg->linear_acceleration.x = accel[0] * -9.80665;
-		msg->linear_acceleration.y = accel[1] * -9.80665;
-		msg->linear_acceleration.z = accel[2] * -9.80665;
+		switch( axis_config )
+		{
+			case TSS_USB_AXIS_XYZ:
+				msg->linear_acceleration.x = accel[0] * GRAVITATIONAL_ACCELERATION;
+				msg->linear_acceleration.y = accel[1] * GRAVITATIONAL_ACCELERATION;
+				msg->linear_acceleration.z = accel[2] * GRAVITATIONAL_ACCELERATION;
+				break;
+			case TSS_USB_AXIS_XZY:
+				msg->linear_acceleration.x = accel[0] * GRAVITATIONAL_ACCELERATION;
+				msg->linear_acceleration.y = accel[2] * GRAVITATIONAL_ACCELERATION;
+				msg->linear_acceleration.z = accel[1] * GRAVITATIONAL_ACCELERATION;
+				break;
+			case TSS_USB_AXIS_YXZ:
+				msg->linear_acceleration.x = accel[1] * GRAVITATIONAL_ACCELERATION;
+				msg->linear_acceleration.y = accel[0] * GRAVITATIONAL_ACCELERATION;
+				msg->linear_acceleration.z = accel[2] * GRAVITATIONAL_ACCELERATION;
+				break;
+			case TSS_USB_AXIS_YZX:
+				msg->linear_acceleration.x = accel[2] * GRAVITATIONAL_ACCELERATION;
+				msg->linear_acceleration.y = accel[0] * GRAVITATIONAL_ACCELERATION;
+				msg->linear_acceleration.z = accel[1] * GRAVITATIONAL_ACCELERATION;
+				break;
+			case TSS_USB_AXIS_ZXY:
+				msg->linear_acceleration.x = accel[1] * GRAVITATIONAL_ACCELERATION;
+				msg->linear_acceleration.y = accel[2] * GRAVITATIONAL_ACCELERATION;
+				msg->linear_acceleration.z = accel[0] * GRAVITATIONAL_ACCELERATION;
+				break;
+			case TSS_USB_AXIS_ZYX:
+				msg->linear_acceleration.x = accel[2] * GRAVITATIONAL_ACCELERATION;
+				msg->linear_acceleration.y = accel[1] * GRAVITATIONAL_ACCELERATION;
+				msg->linear_acceleration.z = accel[0] * GRAVITATIONAL_ACCELERATION;
+				break;
+		}
+		if( invert_x_axis )
+			msg->linear_acceleration.x *= -1;
+		if( invert_y_axis )
+			msg->linear_acceleration.y *= -1;
+		if( invert_z_axis )
+			msg->linear_acceleration.z *= -1;
+
+		tf::Quaternion orient;
+		tf::quaternionMsgToTF( msg->orientation, orient );
+		const tf::Vector3 tmp_grav_vect = tf::quatRotate( orient.inverse( ), grav_vect );
+		msg->linear_acceleration.x += tmp_grav_vect.x( );
+		msg->linear_acceleration.y += tmp_grav_vect.y( );
+		msg->linear_acceleration.z += tmp_grav_vect.z( );
 
 		/* Dummy Values */
 		msg->orientation_covariance[0] = .1;
@@ -278,13 +370,13 @@ namespace yei_tss_usb
 		return true;
 	}
 
-	bool TSSUSB::MultiRefCB( std_srvs::Empty::Request &req, std_srvs::Empty::Response &res )
+	bool TSSUSB::LEDColorCB( yei_tss_usb::LEDColor::Request &req, yei_tss_usb::LEDColor::Response &res )
 	{
 		boost::mutex::scoped_lock lock( cmd_lock );
 		if( tssd < 0 && !TSSOpenNoLock( ) )
 			return false;
 
-		if( tss_set_multi_reference_vectors( tssd ) < 0 )
+		if( tss_set_led( tssd, &req.color[0] ) < 0 )
 			return false;
 
 		return true;

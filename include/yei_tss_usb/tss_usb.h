@@ -52,21 +52,22 @@ enum tss_usb_error
 	TSS_USB_ERROR_TIMEOUT = -14
 };
 
-enum tss_usb_axis_directions
+enum tss_usb_axis_configurations
 {
-	TSS_USB_XYZ = 0,
-	TSS_USB_XZY = 1,
-	TSS_USB_YXZ = 2,
-	TSS_USB_YZX = 3,
-	TSS_USB_ZXY = 4,
-	TSS_USB_ZYX = 5
+	TSS_USB_AXIS_XYZ = 0,
+	TSS_USB_AXIS_XZY = 1,
+	TSS_USB_AXIS_YXZ = 2,
+	TSS_USB_AXIS_YZX = 3,
+	TSS_USB_AXIS_ZXY = 4,
+	TSS_USB_AXIS_ZYX = 5
 };
 
 enum tss_usb_axis_inversion
 {
 	TSS_USB_INVERT_X = 32,
 	TSS_USB_INVERT_Y = 16,
-	TSS_USB_INVERT_Z = 8
+	TSS_USB_INVERT_Z = 8,
+	TSS_USB_INVERT_NONE = 0
 };
 
 enum tss_usb_reference_vector_mode
