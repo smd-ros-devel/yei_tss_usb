@@ -26,6 +26,9 @@ namespace yei_tss_usb
 		invert_y_axis( true ),
 		invert_z_axis( false ),
 		reference_vector_mode( 1 ),
+		orientation_covariance( 0.1 ),
+		angular_velocity_covariance( 0.1 ),
+		linear_acceleration_covariance( 0.1 ),
 		grav_vect( 0, 0, GRAVITATIONAL_ACCELERATION ),
 		spin_rate( 100 ),
 		spin_thread( &TSSUSB::spin, this )
@@ -55,6 +58,9 @@ namespace yei_tss_usb
 		grav_vect = tf::Vector3( temp_gravity_vector[0], temp_gravity_vector[1], temp_gravity_vector[2] );
 		nh_priv.param( "reference_vector_mode", reference_vector_mode, 1 );
 		ROS_ASSERT( reference_vector_mode >= 0 && reference_vector_mode <= 3 );
+		nh_priv.param( "orientation_covariance", orientation_covariance, 0.1 );
+		nh_priv.param( "angular_velocity_covariance", angular_velocity_covariance, 0.1 );
+		nh_priv.param( "linear_acceleration_covariance", linear_acceleration_covariance, 0.1 );
 	}
 
 	TSSUSB::~TSSUSB( )
@@ -268,9 +274,15 @@ namespace yei_tss_usb
 		msg->linear_acceleration.z += tmp_grav_vect.z( );
 
 		/* Dummy Values */
-		msg->orientation_covariance[0] = .1;
-		msg->orientation_covariance[4] = .1;
-		msg->orientation_covariance[8] = .1;
+		msg->orientation_covariance[0] = orientation_covariance;
+		msg->orientation_covariance[4] = orientation_covariance;
+		msg->orientation_covariance[8] = orientation_covariance;
+		msg->angular_velocity_covariance[0] = angular_velocity_covariance;
+		msg->angular_velocity_covariance[4] = angular_velocity_covariance;
+		msg->angular_velocity_covariance[8] = angular_velocity_covariance;
+		msg->linear_acceleration_covariance[0] = linear_acceleration_covariance;
+		msg->linear_acceleration_covariance[4] = linear_acceleration_covariance;
+		msg->linear_acceleration_covariance[8] = linear_acceleration_covariance;
 
 		imu_pub.publish( msg );
 		diag_pub_freq.tick( );
