@@ -114,6 +114,7 @@ namespace yei_tss_usb
 		diagnostic_updater::FrequencyStatus diag_pub_freq;
 
 		ros::Publisher imu_pub;
+		ros::Publisher temp_pub;
 		ros::ServiceServer tare_srv;
 		ros::ServiceServer commit_srv;
 		ros::ServiceServer reset_srv;
@@ -131,6 +132,7 @@ namespace yei_tss_usb
 		double orientation_covariance;
 		double angular_velocity_covariance;
 		double linear_acceleration_covariance;
+		double temperature_variance;
 
 		ros::Rate spin_rate;
 		boost::thread spin_thread;
