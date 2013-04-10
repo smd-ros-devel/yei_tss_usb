@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package>
   <name>yei_tss_usb</name>
-  <version>0.0.3</version>
+  <version>0.0.4</version>
   <description>YEI Three-space USB Driver</description>
 
   <maintainer email="logans@cottsay.net">Scott K Logan</maintainer>
