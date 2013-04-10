@@ -115,6 +115,7 @@ namespace yei_tss_usb
 
 		ros::Publisher imu_pub;
 		ros::Publisher temp_pub;
+		ros::Publisher mag_pub;
 		ros::ServiceServer tare_srv;
 		ros::ServiceServer commit_srv;
 		ros::ServiceServer reset_srv;
@@ -133,6 +134,7 @@ namespace yei_tss_usb
 		double angular_velocity_covariance;
 		double linear_acceleration_covariance;
 		double temperature_variance;
+		double magnetic_field_covariance;
 
 		ros::Rate spin_rate;
 		boost::thread spin_thread;

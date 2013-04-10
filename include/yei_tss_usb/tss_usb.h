@@ -99,6 +99,7 @@ int tss_restore_factory_settings( const int tssd );
 int tss_set_multi_reference_vectors( const int tssd );
 int tss_set_reference_mode( const int tssd, const unsigned char val );
 int tss_get_temperature_c( const int tssd, float *val );
+int tss_read_compass( const int tssd, float vals[3] );
 
 #ifdef __cplusplus
 }

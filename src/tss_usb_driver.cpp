@@ -4,6 +4,7 @@
 
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/Temperature.h>
+#include <sensor_msgs/MagneticField.h>
 #include <ros/time.h>
 #include <tf/tf.h>
 
@@ -63,6 +64,7 @@ namespace yei_tss_usb
 		nh_priv.param( "angular_velocity_covariance", angular_velocity_covariance, 0.0 );
 		nh_priv.param( "linear_acceleration_covariance", linear_acceleration_covariance, 0.0 );
 		nh_priv.param( "temperature_variance", temperature_variance, 0.0 );
+		nh_priv.param( "magnetic_field_covariance", magnetic_field_covariance, 0.0 );
 	}
 
 	TSSUSB::~TSSUSB( )
@@ -131,6 +133,7 @@ namespace yei_tss_usb
 
 		imu_pub = nh.advertise<sensor_msgs::Imu>( "imu/data", 1 );
 		temp_pub = nh.advertise<sensor_msgs::Temperature>( "imu/temp", 1 );
+		mag_pub = nh.advertise<sensor_msgs::MagneticField>( "imu/mag", 1 );
 		tare_srv = nh_priv.advertiseService( "tare", &TSSUSB::TareCB, this );
 		commit_srv = nh_priv.advertiseService( "commit", &TSSUSB::CommitCB, this );
 		reset_srv = nh_priv.advertiseService( "reset", &TSSUSB::ResetCB, this );
@@ -160,6 +163,8 @@ namespace yei_tss_usb
 			imu_pub.shutdown( );
 		if( temp_pub )
 			temp_pub.shutdown( );
+		if( mag_pub )
+			mag_pub.shutdown( );
 		if( tare_srv )
 			tare_srv.shutdown( );
 		if( commit_srv )
@@ -314,12 +319,39 @@ namespace yei_tss_usb
 
 		cmd_lock.unlock( );
 
-		sensor_msgs::TemperaturePtr temp_msg( new sensor_msgs::Temperature( ) );
+		sensor_msgs::TemperaturePtr temp_msg( new sensor_msgs::Temperature );
 		temp_msg->header = msg->header;
 		temp_msg->temperature = temp;
 		temp_msg->variance = temperature_variance;
 
 		temp_pub.publish( temp_msg );
+
+		/*
+		 * Magnetic Field
+		 */
+
+		cmd_lock.lock( );
+
+		float mag[3];
+		if( ( ret = tss_read_compass( tssd, mag ) ) < 0 )
+		{
+			TSSCloseNoLock( );
+			io_failure_count++;
+			return;
+		}
+
+		cmd_lock.unlock( );
+
+		sensor_msgs::MagneticFieldPtr mag_msg( new sensor_msgs::MagneticField );
+		mag_msg->header = msg->header;
+		mag_msg->magnetic_field.x = 0.0001 * mag[0];
+		mag_msg->magnetic_field.y = 0.0001 * mag[1];
+		mag_msg->magnetic_field.z = 0.0001 * mag[2];
+		mag_msg->magnetic_field_covariance[0] = magnetic_field_covariance;
+		mag_msg->magnetic_field_covariance[4] = magnetic_field_covariance;
+		mag_msg->magnetic_field_covariance[8] = magnetic_field_covariance;
+
+		mag_pub.publish( mag_msg );
 
 		diag_pub_freq.tick( );
 	}
