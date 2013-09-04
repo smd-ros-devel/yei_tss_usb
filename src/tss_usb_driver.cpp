@@ -31,7 +31,7 @@ namespace yei_tss_usb
 		orientation_covariance( 0.1 ),
 		angular_velocity_covariance( 0.1 ),
 		linear_acceleration_covariance( 0.1 ),
-		grav_vect( 0, 0, GRAVITATIONAL_ACCELERATION ),
+		grav_vect( 0, 0, -GRAVITATIONAL_ACCELERATION ),
 		spin_rate( 100 ),
 		spin_thread( &TSSUSB::spin, this )
 	{
@@ -50,7 +50,7 @@ namespace yei_tss_usb
 		XmlRpc::XmlRpcValue temp_gravity_vector;
 		temp_gravity_vector[0] = 0.0;
 		temp_gravity_vector[1] = 0.0;
-		temp_gravity_vector[2] = GRAVITATIONAL_ACCELERATION;
+		temp_gravity_vector[2] = -GRAVITATIONAL_ACCELERATION;
 		nh_priv.param( "gravity_vector", temp_gravity_vector, temp_gravity_vector );
 		ROS_ASSERT( temp_gravity_vector.getType() == XmlRpc::XmlRpcValue::TypeArray );
 		ROS_ASSERT( temp_gravity_vector.size( ) == 3 );
@@ -243,46 +243,6 @@ namespace yei_tss_usb
 		msg->angular_velocity.y = gyro[1];
 		msg->angular_velocity.z = gyro[2];
 
-		switch( axis_config )
-		{
-			case TSS_USB_AXIS_XYZ:
-				msg->linear_acceleration.x = accel[0] * GRAVITATIONAL_ACCELERATION;
-				msg->linear_acceleration.y = accel[1] * GRAVITATIONAL_ACCELERATION;
-				msg->linear_acceleration.z = accel[2] * GRAVITATIONAL_ACCELERATION;
-				break;
-			case TSS_USB_AXIS_XZY:
-				msg->linear_acceleration.x = accel[0] * GRAVITATIONAL_ACCELERATION;
-				msg->linear_acceleration.y = accel[2] * GRAVITATIONAL_ACCELERATION;
-				msg->linear_acceleration.z = accel[1] * GRAVITATIONAL_ACCELERATION;
-				break;
-			case TSS_USB_AXIS_YXZ:
-				msg->linear_acceleration.x = accel[1] * GRAVITATIONAL_ACCELERATION;
-				msg->linear_acceleration.y = accel[0] * GRAVITATIONAL_ACCELERATION;
-				msg->linear_acceleration.z = accel[2] * GRAVITATIONAL_ACCELERATION;
-				break;
-			case TSS_USB_AXIS_YZX:
-				msg->linear_acceleration.x = accel[2] * GRAVITATIONAL_ACCELERATION;
-				msg->linear_acceleration.y = accel[0] * GRAVITATIONAL_ACCELERATION;
-				msg->linear_acceleration.z = accel[1] * GRAVITATIONAL_ACCELERATION;
-				break;
-			case TSS_USB_AXIS_ZXY:
-				msg->linear_acceleration.x = accel[1] * GRAVITATIONAL_ACCELERATION;
-				msg->linear_acceleration.y = accel[2] * GRAVITATIONAL_ACCELERATION;
-				msg->linear_acceleration.z = accel[0] * GRAVITATIONAL_ACCELERATION;
-				break;
-			case TSS_USB_AXIS_ZYX:
-				msg->linear_acceleration.x = accel[2] * GRAVITATIONAL_ACCELERATION;
-				msg->linear_acceleration.y = accel[1] * GRAVITATIONAL_ACCELERATION;
-				msg->linear_acceleration.z = accel[0] * GRAVITATIONAL_ACCELERATION;
-				break;
-		}
-		if( invert_x_axis )
-			msg->linear_acceleration.x *= -1;
-		if( invert_y_axis )
-			msg->linear_acceleration.y *= -1;
-		if( invert_z_axis )
-			msg->linear_acceleration.z *= -1;
-
 		tf::Quaternion orient;
 		tf::quaternionMsgToTF( msg->orientation, orient );
 		const tf::Vector3 tmp_grav_vect = tf::quatRotate( orient.inverse( ), grav_vect );
@@ -372,6 +332,7 @@ namespace yei_tss_usb
 		if( ( ret = tss_get_version( tssd, version ) ) < 0 )
 		{
 			stat.summary( diagnostic_msgs::DiagnosticStatus::ERROR, "Failed to fetch version" );
+			ROS_WARN_STREAM("Failed to fetch version: " << ret);
 			io_failure_count++;
 			TSSCloseNoLock( );
 			return;
@@ -382,6 +343,7 @@ namespace yei_tss_usb
 		if( ( ret = tss_get_version_extended( tssd, ext_version ) ) < 0 )
 		{
 			stat.summary( diagnostic_msgs::DiagnosticStatus::ERROR, "Failed to fetch extended_version" );
+			ROS_WARN_STREAM("Failed to fetch extended_version: " << ret);
 			io_failure_count++;
 			TSSCloseNoLock( );
 			return;

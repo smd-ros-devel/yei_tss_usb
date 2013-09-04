@@ -118,7 +118,7 @@ static int next_available_handle( )
 //This is a convenience function to calc the last byte in the packet
 // commands without parameters can use the same number as the command
 static unsigned char create_checksum( const unsigned char *command_bytes,
-        const unsigned int num_bytes )
+	const unsigned int num_bytes )
 {
 	unsigned int chkSum = 0;
 	unsigned int i;
@@ -249,10 +249,10 @@ int tss_usb_open( const char *port )
 	}
 	int dev_baud;
 	if( ( ret = read_data( fd, (unsigned char *)&dev_baud, sizeof( int ) ) ) < 0 )
-        {
+	{
 		close( fd );
 		return ret;
-        }
+	}
 	endian_swap( (unsigned int *)&dev_baud );
 	int new_baud = baud2term( &dev_baud );
 	if( new_baud != 115200 )
