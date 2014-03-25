@@ -4,7 +4,7 @@ project(yei_tss_usb)
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
-find_package(catkin REQUIRED COMPONENTS diagnostic_updater roscpp sensor_msgs std_srvs gencpp std_msgs)
+find_package(catkin REQUIRED COMPONENTS diagnostic_updater roscpp sensor_msgs std_srvs gencpp std_msgs tf)
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -71,7 +71,8 @@ add_library(tss_usb_driver
 add_executable(tss_usb_node src/tss_usb_node.cpp)
 
 ## Add dependencies to the executable
-# add_dependencies(yei_tss_usb_node ${PROJECT_NAME})
+add_dependencies(tss_usb_driver ${PROJECT_NAME}_gencpp)
+add_dependencies(tss_usb_node ${PROJECT_NAME}_gencpp)
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(tss_usb_driver
