@@ -31,7 +31,7 @@ namespace yei_tss_usb
 		orientation_covariance( 0.1 ),
 		angular_velocity_covariance( 0.1 ),
 		linear_acceleration_covariance( 0.1 ),
-		grav_vect( 0, 0, -GRAVITATIONAL_ACCELERATION ),
+		grav_vect( 0, 0, GRAVITATIONAL_ACCELERATION ),
 		spin_rate( 100 ),
 		spin_thread( &TSSUSB::spin, this )
 	{
@@ -50,7 +50,7 @@ namespace yei_tss_usb
 		XmlRpc::XmlRpcValue temp_gravity_vector;
 		temp_gravity_vector[0] = 0.0;
 		temp_gravity_vector[1] = 0.0;
-		temp_gravity_vector[2] = -GRAVITATIONAL_ACCELERATION;
+		temp_gravity_vector[2] = GRAVITATIONAL_ACCELERATION;
 		nh_priv.param( "gravity_vector", temp_gravity_vector, temp_gravity_vector );
 		ROS_ASSERT( temp_gravity_vector.getType() == XmlRpc::XmlRpcValue::TypeArray );
 		ROS_ASSERT( temp_gravity_vector.size( ) == 3 );
@@ -246,9 +246,9 @@ namespace yei_tss_usb
 		tf::Quaternion orient;
 		tf::quaternionMsgToTF( msg->orientation, orient );
 		const tf::Vector3 tmp_grav_vect = tf::quatRotate( orient.inverse( ), grav_vect );
-		msg->linear_acceleration.x += tmp_grav_vect.x( );
-		msg->linear_acceleration.y += tmp_grav_vect.y( );
-		msg->linear_acceleration.z += tmp_grav_vect.z( );
+		msg->linear_acceleration.x = -GRAVITATIONAL_ACCELERATION * accel[0] + tmp_grav_vect.x( );
+		msg->linear_acceleration.y = -GRAVITATIONAL_ACCELERATION * accel[1] + tmp_grav_vect.y( );
+		msg->linear_acceleration.z = -GRAVITATIONAL_ACCELERATION * accel[2] + tmp_grav_vect.z( );
 
 		/* Dummy Values */
 		msg->orientation_covariance[0] = orientation_covariance;
