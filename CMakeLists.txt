@@ -7,7 +7,7 @@ project(yei_tss_usb)
 find_package(catkin REQUIRED COMPONENTS diagnostic_updater roscpp sensor_msgs std_srvs gencpp std_msgs tf)
 
 ## System dependencies are found with CMake's conventions
-# find_package(Boost REQUIRED COMPONENTS system)
+find_package(libxml2 REQUIRED)
 
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and scripts declared therein get installed
@@ -57,6 +57,7 @@ catkin_package(
 ## Specify additional locations of header files
 include_directories(include
   ${catkin_INCLUDE_DIRS}
+  ${LIBXML2_INCLUDE_DIRS}
 )
 
 ## Declare a cpp library
@@ -69,6 +70,7 @@ add_library(tss_usb_driver
 
 ## Declare a cpp executable
 add_executable(tss_usb_node src/tss_usb_node.cpp)
+add_executable(tss_usb_fw_updater src/tss_usb_fw_updater.c)
 
 ## Add dependencies to the executable
 add_dependencies(tss_usb_driver ${PROJECT_NAME}_gencpp)
@@ -81,6 +83,10 @@ target_link_libraries(tss_usb_driver
 target_link_libraries(tss_usb_node
   tss_usb_driver
   ${catkin_LIBRARIES}
+)
+target_link_libraries(tss_usb_fw_updater
+  tss_usb
+  ${LIBXML2_LIBRARIES}
 )
 
 #############
