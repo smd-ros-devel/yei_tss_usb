@@ -36,6 +36,7 @@ namespace yei_tss_usb
 		spin_thread( &TSSUSB::spin, this )
 	{
 		cmd_lock.unlock( );
+
 		diag.setHardwareID( "YEI 3-Space Sensor (not connected)" );
 		diag.add( "YEI TSS Status", this, &TSSUSB::DiagCB );
 		diag.add( diag_pub_freq );
@@ -70,6 +71,7 @@ namespace yei_tss_usb
 	TSSUSB::~TSSUSB( )
 	{
 		spin_thread.interrupt( );
+
 		TSSClose( );
 	}
 
@@ -91,13 +93,16 @@ namespace yei_tss_usb
 			if( lowerstr[0] == 'z' && lowerstr[1] == 'y' && lowerstr[2] == 'x' )
 				return TSS_USB_AXIS_ZYX;
 		}
+
 		ROS_ASSERT_MSG(1, "WARNING: Invalid axis configuration '%s'", str );
+
 		return TSS_USB_AXIS_XYZ;
 	}
 
 	bool TSSUSB::TSSOpen( )
 	{
 		boost::mutex::scoped_lock lock( cmd_lock );
+
 		return TSSOpenNoLock( );
 	}
 
@@ -107,10 +112,16 @@ namespace yei_tss_usb
 			return true;
 
 		tssd = tss_usb_open( port.c_str( ) );
-
 		if( tssd < 0 )
 		{
 			open_failure_count++;
+			return false;
+		}
+
+		if( tss_usb_match_baud( tssd ) < 0 )
+		{
+			TSSCloseNoLock( );
+			io_failure_count++;
 			return false;
 		}
 
@@ -146,19 +157,20 @@ namespace yei_tss_usb
 	void TSSUSB::TSSClose( )
 	{
 		boost::mutex::scoped_lock lock( cmd_lock );
+
 		TSSCloseNoLock( );
 	}
 
 	void TSSUSB::TSSCloseNoLock( )
 	{
 		int old_tssd = tssd;
+
 		if( tssd < 0 )
-		{
-			cmd_lock.unlock( );
 			return;
-		}
+
 		tssd = -1;
 		tss_usb_close( old_tssd );
+
 		if( imu_pub )
 			imu_pub.shutdown( );
 		if( temp_pub )
@@ -182,8 +194,11 @@ namespace yei_tss_usb
 		while( ros::ok( ) )
 		{
 			boost::this_thread::interruption_point( );
+
 			spinOnce( );
+
 			diag.update( );
+
 			spin_rate.sleep( );
 		}
 	}
@@ -191,8 +206,13 @@ namespace yei_tss_usb
 	void TSSUSB::spinOnce( )
 	{
 		cmd_lock.lock( );
+
 		if( tssd < 0 && !TSSOpenNoLock( ) )
+		{
+			cmd_lock.unlock( );
+
 			return;
+		}
 
 		int ret;
 
@@ -206,6 +226,7 @@ namespace yei_tss_usb
 			TSSCloseNoLock( );
 			cmd_lock.unlock( );
 			io_failure_count++;
+
 			return;
 		}
 
@@ -215,6 +236,7 @@ namespace yei_tss_usb
 			TSSCloseNoLock( );
 			cmd_lock.unlock( );
 			io_failure_count++;
+
 			return;
 		}
 
@@ -224,6 +246,7 @@ namespace yei_tss_usb
 			TSSCloseNoLock( );
 			cmd_lock.unlock( );
 			io_failure_count++;
+
 			return;
 		}
 
@@ -273,7 +296,9 @@ namespace yei_tss_usb
 		if( ( ret = tss_get_temperature_c( tssd, &temp ) ) < 0 )
 		{
 			TSSCloseNoLock( );
+			cmd_lock.unlock( );
 			io_failure_count++;
+
 			return;
 		}
 
@@ -296,7 +321,9 @@ namespace yei_tss_usb
 		if( ( ret = tss_read_compass( tssd, mag ) ) < 0 )
 		{
 			TSSCloseNoLock( );
+			cmd_lock.unlock( );
 			io_failure_count++;
+
 			return;
 		}
 
@@ -319,46 +346,54 @@ namespace yei_tss_usb
 	void TSSUSB::DiagCB( diagnostic_updater::DiagnosticStatusWrapper &stat )
 	{
 		boost::mutex::scoped_lock lock( cmd_lock );
+
 		if( tssd < 0 && !TSSOpenNoLock( ) )
 		{
 			stat.summary( diagnostic_msgs::DiagnosticStatus::ERROR, "Disconnected" );
-			return;
 		}
-
-		stat.summary( diagnostic_msgs::DiagnosticStatus::OK, "TSS status OK" );
-
-		int ret;
-		char version[33];
-		if( ( ret = tss_get_version( tssd, version ) ) < 0 )
+		else
 		{
-			stat.summary( diagnostic_msgs::DiagnosticStatus::ERROR, "Failed to fetch version" );
-			ROS_WARN_STREAM("Failed to fetch version: " << ret);
-			io_failure_count++;
-			TSSCloseNoLock( );
-			return;
-		}
-		stat.add( "version", version );
+			stat.summary( diagnostic_msgs::DiagnosticStatus::OK, "TSS status OK" );
 
-		char ext_version[13];
-		if( ( ret = tss_get_version_extended( tssd, ext_version ) ) < 0 )
-		{
-			stat.summary( diagnostic_msgs::DiagnosticStatus::ERROR, "Failed to fetch extended_version" );
-			ROS_WARN_STREAM("Failed to fetch extended_version: " << ret);
-			io_failure_count++;
-			TSSCloseNoLock( );
-			return;
+			int ret;
+			char version[33];
+			if( ( ret = tss_get_version( tssd, version ) ) < 0 )
+			{
+				stat.summary( diagnostic_msgs::DiagnosticStatus::ERROR, "Failed to fetch version" );
+				ROS_WARN_STREAM("Failed to fetch version: " << ret);
+				io_failure_count++;
+				TSSCloseNoLock( );
+				return;
+			}
+			stat.add( "version", version );
+
+			char ext_version[13];
+			if( ( ret = tss_get_version_extended( tssd, ext_version ) ) < 0 )
+			{
+				stat.summary( diagnostic_msgs::DiagnosticStatus::ERROR, "Failed to fetch extended_version" );
+				ROS_WARN_STREAM("Failed to fetch extended_version: " << ret);
+				io_failure_count++;
+				TSSCloseNoLock( );
+				return;
+			}
+			stat.add( "version_extended", ext_version );
 		}
-		stat.add( "version_extended", ext_version );
 
 		static unsigned int last_io_failure_count = io_failure_count;
 		if( io_failure_count > last_io_failure_count )
+		{
+			ROS_WARN_THROTTLE(1, "I/O Failure");
 			stat.summary( diagnostic_msgs::DiagnosticStatus::WARN, "I/O Failure Count Increase" );
+		}
 		stat.add( "io_failure_count", io_failure_count );
 		last_io_failure_count = io_failure_count;
 
 		static unsigned int last_open_failure_count = open_failure_count;
 		if( open_failure_count > last_open_failure_count )
+		{
+			ROS_WARN_THROTTLE(1, "Failed to open TSS device");
 			stat.summary( diagnostic_msgs::DiagnosticStatus::WARN, "Open Failure Count Increase" );
+		}
 		stat.add( "open_failure_count", open_failure_count );
 		last_open_failure_count = open_failure_count;
 	}
@@ -366,6 +401,7 @@ namespace yei_tss_usb
 	bool TSSUSB::TareCB( std_srvs::Empty::Request &req, std_srvs::Empty::Response &res )
 	{
 		boost::mutex::scoped_lock lock( cmd_lock );
+
 		if( tssd < 0 && !TSSOpenNoLock( ) )
 			return false;
 
@@ -378,6 +414,7 @@ namespace yei_tss_usb
 	bool TSSUSB::CommitCB( std_srvs::Empty::Request &req, std_srvs::Empty::Response &res )
 	{
 		boost::mutex::scoped_lock lock( cmd_lock );
+
 		if( tssd < 0 && !TSSOpenNoLock( ) )
 			return false;
 
@@ -390,6 +427,7 @@ namespace yei_tss_usb
 	bool TSSUSB::ResetCB( std_srvs::Empty::Request &req, std_srvs::Empty::Response &res )
 	{
 		boost::mutex::scoped_lock lock( cmd_lock );
+
 		if( tssd < 0 && !TSSOpenNoLock( ) )
 			return false;
 
@@ -402,6 +440,7 @@ namespace yei_tss_usb
 	bool TSSUSB::FactoryCB( std_srvs::Empty::Request &req, std_srvs::Empty::Response &res )
 	{
 		boost::mutex::scoped_lock lock( cmd_lock );
+
 		if( tssd < 0 && !TSSOpenNoLock( ) )
 			return false;
 
@@ -414,6 +453,7 @@ namespace yei_tss_usb
 	bool TSSUSB::LEDColorCB( yei_tss_usb::LEDColor::Request &req, yei_tss_usb::LEDColor::Response &res )
 	{
 		boost::mutex::scoped_lock lock( cmd_lock );
+
 		if( tssd < 0 && !TSSOpenNoLock( ) )
 			return false;
 

@@ -78,8 +78,23 @@ enum tss_usb_reference_vector_mode
 	TSS_USB_REFERENCE_MULTI
 };
 
+struct tss_bootloader_info
+{
+	unsigned int chip_id;
+	unsigned int mem_start;
+	unsigned int mem_end;
+	unsigned short int page_size;
+	unsigned int user_page_start;
+	unsigned short int user_page_size;
+	unsigned short int app_version;
+	unsigned short int boot_version;
+} __attribute__((packed));
+
 int tss_usb_open( const char *port );
 void tss_usb_close( const int tssd );
+
+int tss_usb_match_baud( const int tssd );
+int tss_enter_bootloader( const int tssd );
 
 int tss_get_led( const int tssd, float vals[3] );
 int tss_set_led( const int tssd, const float vals[3] );
@@ -100,6 +115,15 @@ int tss_set_multi_reference_vectors( const int tssd );
 int tss_set_reference_mode( const int tssd, const unsigned char val );
 int tss_get_temperature_c( const int tssd, float *val );
 int tss_read_compass( const int tssd, float vals[3] );
+int tss_get_serial( const int tssd, unsigned char vals[4] );
+
+int tss_bootloader_ping( const int tssd );
+int tss_bootloader_info( const int tssd, struct tss_bootloader_info *info );
+int tss_bootloader_set_addr( const int tssd, const unsigned int val );
+int tss_bootloader_mem_prog( const int tssd, const unsigned char *val, const unsigned int len, const unsigned int page_size );
+int tss_bootloader_mem_prog_c( const int tssd, const unsigned char *val, const unsigned int len, const unsigned int page_size );
+int tss_bootloader_finish( const int tssd );
+int tss_bootloader_run( const int tssd );
 
 #ifdef __cplusplus
 }

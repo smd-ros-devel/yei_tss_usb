@@ -58,6 +58,9 @@ int main( int argc, char *argv[] )
 {
 	ros::init( argc, argv, "tss_usb_node" );
 
+	if (!ros::ok())
+		std::exit( EXIT_FAILURE );
+
 	ros::NodeHandle nh;
 	ros::NodeHandle nh_priv( "~" );
 

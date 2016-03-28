@@ -56,6 +56,17 @@
 
 #define NO_FLUSH_BUFFER 1
 
+enum tss_bootloader_commands
+{
+	BL_PING = 0x3F,
+	BL_MEM_PROG = 0x41,
+	BL_RUN = 0x42,
+	BL_MEM_PROG_C = 0x43,
+	BL_FINISH = 0x46,
+	BL_INFO = 0x49,
+	BL_SET_ADDR = 0x53,
+};
+
 enum tss_usb_commands
 {
 	CMD_READ_FILTERED_TARED_ORIENTATION_QUATERNION = 0x00,
@@ -75,11 +86,13 @@ enum tss_usb_commands
 	CMD_RESTORE_FACTORY_SETTINGS = 0xE0,
 	CMD_COMMIT_SETTINGS = 0xE1,
 	CMD_SOFTWARE_RESET = 0xE2,
+	CMD_ENTER_BOOTLOADER_MODE = 0xE5,
 	CMD_GET_VERSION = 0xE6,
 	CMD_SET_UART_BAUD_RATE = 0xE7,
 	CMD_GET_UART_BAUD_RATE = 0xE8,
+	CMD_GET_SERIAL_NUMBER = 0xED,
 	CMD_SET_LED_COLOR = 0xEE,
-	CMD_GET_LED_COLOR = 0xEF
+	CMD_GET_LED_COLOR = 0xEF,
 };
 
 struct tss_usb_priv
@@ -183,13 +196,22 @@ static int baud2term( int *baud )
 
 static int send_cmd( const int fd, const unsigned char *data, const size_t num_bytes )
 {
-	int bytes_sent = write( fd, data, num_bytes );
-	if( bytes_sent < 0 )
-		return TSS_USB_ERROR_IO;
-	else if( bytes_sent == 0 )
-		return TSS_USB_ERROR_TIMEOUT;
-	else if( (unsigned)bytes_sent != num_bytes )
-		return TSS_USB_ERROR_IO;
+	int bytes_sent;
+	size_t bytes_to_send = num_bytes;
+
+	do
+	{
+		bytes_sent = write( fd, data, num_bytes );
+
+		if( bytes_sent < 0 )
+			return TSS_USB_ERROR_IO;
+		else if( bytes_sent == 0 )
+			return TSS_USB_ERROR_TIMEOUT;
+		else
+			bytes_to_send -= bytes_sent;
+	}
+	while( bytes_to_send > 0 );
+
 	return TSS_USB_SUCCESS;
 }
 
@@ -204,6 +226,7 @@ static int read_data( const int fd, unsigned char *data, size_t num_bytes )
 		if( bytes_recv == 0 )
 			return TSS_USB_ERROR_TIMEOUT;
 		num_bytes -= bytes_recv;
+		data += bytes_recv;
 	}
 	return TSS_USB_SUCCESS;
 }
@@ -239,42 +262,7 @@ int tss_usb_open( const char *port )
 		return TSS_USB_ERROR_IO;
 	}
 
-	/* Step 2: Set our baud rate to match the device, if necessary */
-	unsigned char buf[3] = { CMD_HEADER, CMD_GET_UART_BAUD_RATE, CMD_GET_UART_BAUD_RATE };
-	int ret;
-	if( ( ret = send_cmd( fd, buf, sizeof( buf ) ) ) < 0 )
-	{
-		close( fd );
-		return ret;
-	}
-	int dev_baud;
-	if( ( ret = read_data( fd, (unsigned char *)&dev_baud, sizeof( int ) ) ) < 0 )
-	{
-		close( fd );
-		return ret;
-	}
-	endian_swap( (unsigned int *)&dev_baud );
-	int new_baud = baud2term( &dev_baud );
-	if( new_baud != 115200 )
-	{
-		if( cfsetispeed( &options, new_baud ) == -1 )
-		{
-			close( fd );
-			return TSS_USB_ERROR_IO;
-		}
-		if( cfsetospeed( &options, new_baud ) == -1 )
-		{
-			close( fd );
-			return TSS_USB_ERROR_IO;
-		}
-		if( tcsetattr( fd, TCSANOW, &options ) == -1 )
-		{
-			close( fd );
-			return TSS_USB_ERROR_IO;
-		}
-	}
-
-	/* Step 3: Allocate a private struct */
+	/* Step 2: Allocate a private struct */
 	int mydev = next_available_handle( );
 	if( mydev < 0 )
 	{
@@ -300,7 +288,7 @@ int tss_usb_open( const char *port )
 	}
 	memcpy( tss_usb_list[mydev]->port, port, strlen( port ) + 1 );
 	tss_usb_list[mydev]->fd = fd;
-	tss_usb_list[mydev]->baud = dev_baud;
+	tss_usb_list[mydev]->baud = 115200;
 
 	return TSS_USB_SUCCESS;
 }
@@ -318,6 +306,63 @@ void tss_usb_close( const int tssd )
 
 	free( tss_usb_list[tssd] );
 	tss_usb_list[tssd] = NULL;
+}
+
+int tss_usb_match_baud( const int tssd )
+{
+	unsigned char buf[3] = { CMD_HEADER, CMD_GET_UART_BAUD_RATE, CMD_GET_UART_BAUD_RATE };
+	struct termios options;
+	int ret;
+
+	if( tcgetattr( tss_usb_list[tssd]->fd, &options ) < 0 )
+	{
+		return TSS_USB_ERROR_IO;
+	}
+
+	if( ( ret = send_cmd( tss_usb_list[tssd]->fd, buf, sizeof( buf ) ) ) < 0 )
+	{
+		return ret;
+	}
+
+	int dev_baud;
+	if( ( ret = read_data( tss_usb_list[tssd]->fd, (unsigned char *)&dev_baud, sizeof( int ) ) ) < 0 )
+	{
+		return ret;
+	}
+	endian_swap( (unsigned int *)&dev_baud );
+
+	int new_baud = baud2term( &dev_baud );
+	if( dev_baud != tss_usb_list[tssd]->baud )
+	{
+		if( cfsetispeed( &options, new_baud ) == -1 )
+		{
+			return TSS_USB_ERROR_IO;
+		}
+		if( cfsetospeed( &options, new_baud ) == -1 )
+		{
+			return TSS_USB_ERROR_IO;
+		}
+		if( tcsetattr( tss_usb_list[tssd]->fd, TCSANOW, &options ) == -1 )
+		{
+			return TSS_USB_ERROR_IO;
+		}
+
+		tss_usb_list[tssd]->baud = dev_baud;
+	}
+
+	return 0;
+}
+
+int tss_enter_bootloader( const int tssd )
+{
+	/* Construct Packet Payload */
+	unsigned char buf[2] = { CMD_ENTER_BOOTLOADER_MODE, CMD_ENTER_BOOTLOADER_MODE };
+	int ret;
+
+	if( ( ret = send_cmd( tss_usb_list[tssd]->fd, buf, sizeof( buf ) ) ) < 0 )
+		return ret;
+
+	return TSS_USB_SUCCESS;
 }
 
 int tss_get_led( const int tssd, float vals[3] )
@@ -551,7 +596,6 @@ int tss_get_version_extended( const int tssd, char vals[13] )
 		/* Read Response */
 		if( ( ret = read_data( tss_usb_list[tssd]->fd, (unsigned char *)tss_usb_list[tssd]->version_extended, 12 * sizeof( char ) ) ) < 0 )
 		{
-			printf( "Got %s\n", tss_usb_list[tssd]->version_extended );
 			free( tss_usb_list[tssd]->version_extended );
 			tss_usb_list[tssd]->version_extended = NULL;
 			return ret;
@@ -663,4 +707,186 @@ int tss_read_compass( const int tssd, float vals[3] )
 	return TSS_USB_SUCCESS;
 }
 
+int tss_get_serial( const int tssd, unsigned char vals[4] )
+{
+	#ifndef NO_FLUSH_BUFFER
+	/* Clear Response Buffer */
+	tcflush( tss_usb_list[tssd]->fd, TCIOFLUSH );
+	#endif
 
+	/* Construct Packet Payload */
+	unsigned char buf[3] = { CMD_HEADER, CMD_GET_SERIAL_NUMBER, CMD_GET_SERIAL_NUMBER };
+	int ret;
+
+	if( ( ret = send_cmd( tss_usb_list[tssd]->fd, buf, sizeof( buf ) ) ) < 0 )
+		return ret;
+
+	/* Read Response */
+	if( ( ret = read_data( tss_usb_list[tssd]->fd, (unsigned char *)vals, 4 * sizeof( unsigned char ) ) ) < 0 )
+		return ret;
+
+	return TSS_USB_SUCCESS;
+}
+
+int tss_bootloader_ping( const int tssd )
+{
+	#ifndef NO_FLUSH_BUFFER
+	/* Clear Response Buffer */
+	tcflush( tss_usb_list[tssd]->fd, TCIOFLUSH );
+	#endif
+
+	/* Construct Packet Payload */
+	unsigned char buf[1] = { BL_PING };
+	unsigned char res[2];
+	int ret;
+
+	if( ( ret = send_cmd( tss_usb_list[tssd]->fd, buf, sizeof( buf ) ) ) < 0 )
+		return ret;
+
+	/* Read Response */
+	if( ( ret = read_data( tss_usb_list[tssd]->fd, res, sizeof( res ) ) ) < 0 )
+		return ret;
+
+	return ( res[0] == 'O' && res[1] == 'K' ) ? 1 : 0;
+}
+
+
+int tss_bootloader_info( const int tssd, struct tss_bootloader_info *info )
+{
+	#ifndef NO_FLUSH_BUFFER
+	/* Clear Response Buffer */
+	tcflush( tss_usb_list[tssd]->fd, TCIOFLUSH );
+	#endif
+
+	/* Construct Packet Payload */
+	unsigned char buf[1] = { BL_INFO };
+	int ret;
+
+	if( ( ret = send_cmd( tss_usb_list[tssd]->fd, buf, sizeof( buf ) ) ) < 0 )
+		return ret;
+
+	/* Read Response */
+	if( ( ret = read_data( tss_usb_list[tssd]->fd, (unsigned char *)info, sizeof( *info ) ) ) < 0 )
+		return ret;
+
+	endian_swap( &info->chip_id );
+	endian_swap( &info->mem_start );
+	endian_swap( &info->mem_end );
+	endian_swap( &info->user_page_start );
+
+	return TSS_USB_SUCCESS;
+}
+
+int tss_bootloader_set_addr( const int tssd, const unsigned int val )
+{
+	/* Construct Packet Payload */
+	unsigned char buf[5] = { BL_SET_ADDR };
+	unsigned char res[1];
+	int ret;
+
+	/* Wait up to 5 seconds */
+	int timeout = 50;
+
+	memcpy( &buf[1], &val, sizeof( unsigned int ) );
+	endian_swap( (unsigned int *)&buf[1] );
+
+	if( ( ret = send_cmd( tss_usb_list[tssd]->fd, buf, sizeof( buf ) ) ) < 0 )
+		return ret;
+
+	/* Read Response */
+	while( timeout > 0 )
+	{
+		if( ( ret = read_data( tss_usb_list[tssd]->fd, res, sizeof( res ) ) ) < 0 )
+		{
+			if( ret != TSS_USB_ERROR_TIMEOUT )
+				return ret;
+
+			timeout--;
+		}
+		else
+			break;
+	}
+
+	return timeout <= 0 ? TSS_USB_ERROR_TIMEOUT : res[0];
+}
+
+int tss_bootloader_mem_prog( const int tssd, const unsigned char *val, const unsigned int len, const unsigned int page_size )
+{
+	/* Construct Packet Payload */
+	unsigned char buf[1] = { BL_MEM_PROG };
+	int ret;
+	unsigned int remaining = len;
+	unsigned int chunk;
+
+	while( remaining >= 0 )
+	{
+		// TODO: CRC
+		chunk = remaining > ( page_size * 2 ) ? ( page_size * 2 ) : remaining;
+
+		if( ( ret = send_cmd( tss_usb_list[tssd]->fd, buf, sizeof( buf ) ) ) < 0 )
+			return ret;
+
+		if( ( ret = send_cmd( tss_usb_list[tssd]->fd, val, chunk ) ) < 0 )
+			return ret;
+
+		val += chunk;
+		remaining -= chunk;
+	}
+
+	return TSS_USB_SUCCESS;
+}
+
+int tss_bootloader_mem_prog_c( const int tssd, const unsigned char *val, const unsigned int len, const unsigned int page_size )
+{
+	/* Construct Packet Payload */
+	unsigned char buf[1] = { BL_MEM_PROG_C };
+	int ret;
+	unsigned int remaining = len;
+	unsigned int chunk;
+
+	while( remaining >= 0 )
+	{
+		// TODO: CRC
+		chunk = remaining > ( page_size * 2 ) ? ( page_size * 2 ) : remaining;
+
+		if( ( ret = send_cmd( tss_usb_list[tssd]->fd, buf, sizeof( buf ) ) ) < 0 )
+			return ret;
+
+		if( ( ret = send_cmd( tss_usb_list[tssd]->fd, val, chunk ) ) < 0 )
+			return ret;
+
+		val += chunk;
+		remaining -= chunk;
+	}
+
+	return TSS_USB_SUCCESS;
+}
+
+int tss_bootloader_finish( const int tssd )
+{
+	/* Construct Packet Payload */
+	unsigned char buf[1] = { BL_FINISH };
+	unsigned char res[1];
+	int ret;
+
+	if( ( ret = send_cmd( tss_usb_list[tssd]->fd, buf, sizeof( buf ) ) ) < 0 )
+		return ret;
+
+	/* Read Response */
+	if( ( ret = read_data( tss_usb_list[tssd]->fd, res, sizeof( res ) ) ) < 0 )
+		return ret;
+
+	return res[0];
+}
+
+int tss_bootloader_run( const int tssd )
+{
+	/* Construct Packet Payload */
+	unsigned char buf[1] = { BL_RUN };
+	int ret;
+
+	if( ( ret = send_cmd( tss_usb_list[tssd]->fd, buf, sizeof( buf ) ) ) < 0 )
+		return ret;
+
+	return TSS_USB_SUCCESS;
+}
